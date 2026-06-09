@@ -75,3 +75,19 @@ class PredictionResponse(BaseModel):
         description="Ano arredondado para inteiro",
         examples=[2008],
     )
+
+class HelpData(BaseModel):
+    """Feedback do usuário: features + label correto."""
+
+    genre_bota: str
+    espece: str
+    stadededeveloppement: str
+    hauteurarbre: str
+    typenature: Optional[str]
+    latitude: float
+    longitude: float
+    label_correct: str = Field(
+        ...,
+        description="Correção do usuário: churn ou stable",
+        examples=["churn", "stable"],
+    )
