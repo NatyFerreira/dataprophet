@@ -68,3 +68,5 @@ prometheus.yml~
 .vscode/
 .idea/
 
+*.pkl
+
