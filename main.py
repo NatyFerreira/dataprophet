@@ -10,7 +10,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from schemas import ArvoreFeatures, PredictionResponse
 
 MLFLOW_URI = os.getenv("MLFLOW_URI", "http://localhost:5000")
-MODEL_URI  = "models:/DataProphet/Production"
+MODEL_URI  = "models:/DataProphet@production"
 
 app_state = {}
 
