@@ -14,10 +14,16 @@ dataprophet/
 ├── metrics.py           # Prometheus metrics (Counter, Histogram)
 ├── train.py             # Model training + MLflow logging
 ├── retrain.py           # Automated retraining with model promotion
+├── dags/                # Airflow DAGs (Day 4)
+│   ├── dag_preprocessing.py   # Validate & prepare help_data/ feedback
+│   ├── dag_retrain.py         # Trigger retrain.py via Airflow
+│   ├── dag_deploy.py          # Conditional model promotion (BranchPythonOperator)
+│   └── dag_mlops_weekly.py    # Master DAG — runs every Monday at 6am
+├── help_data/           # User feedback (JSON files)
+├── data/                # Processed datasets (retrain_dataset.csv)
 ├── prometheus.yml       # Prometheus scraping configuration
 ├── docker-compose.yml   # MLflow Server
 ├── environment.yml      # Conda dependencies
-├── help_data/           # User feedback (JSON files)
 └── README.md
 ```
 
@@ -33,6 +39,7 @@ dataprophet/
 | Model Registry | MLflow Registry (alias `production`) |
 | Metrics | prometheus-client |
 | Monitoring | Prometheus 3.12 + Grafana 13 |
+| Orchestration | Apache Airflow 2.9.1 |
 | Environment | conda Python 3.11 |
 
 ---
@@ -45,7 +52,7 @@ conda env create -f environment.yml
 conda activate dataprophet
 
 # 2. Install additional dependencies
-pip install mlflow prometheus-client
+pip install mlflow prometheus-client apache-airflow==2.9.1
 ```
 
 ---
@@ -79,6 +86,13 @@ prometheus --config.file=prometheus.yml --web.listen-address=":9090" &
 grafana server --homepath /opt/homebrew/share/grafana &
 ```
 Access: `http://localhost:3000` (admin/admin)
+
+### 6. Airflow
+```bash
+export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
+airflow standalone
+```
+Access: `http://localhost:8080` (admin / see terminal output for password)
 
 ---
 
@@ -136,7 +150,29 @@ curl -X POST http://localhost:8000/api/helpdata \
   }'
 ```
 
-JSON files are saved to `help_data/` and consumed by `retrain.py` in Day 4.
+JSON files are saved to `help_data/` and consumed by `dag_preprocessing` on the next Airflow run.
+
+---
+
+## Automated MLOps Pipeline (Airflow)
+
+The weekly pipeline runs every Monday at 6am (`0 6 * * 1`) via `dag_mlops_weekly`:
+
+```
+dag_preprocessing → dag_retrain → dag_deploy
+```
+
+| DAG | What it does |
+|---|---|
+| `dag_preprocessing` | Reads `help_data/` JSONs, validates, saves `data/retrain_dataset.csv` |
+| `dag_retrain` | Calls `retrain.py`, verifies new MLflow run registered |
+| `dag_deploy` | Compares R² of new model vs production; promotes if improvement > 1% |
+| `dag_mlops_weekly` | Master DAG — chains the 3 above with `TriggerDagRunOperator` |
+
+To trigger manually:
+1. Open `http://localhost:8080`
+2. Search DAGs by tag `dataprophet`
+3. Click ▶ on `dag_mlops_weekly`
 
 ---
 
