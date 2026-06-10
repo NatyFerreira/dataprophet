@@ -70,3 +70,12 @@ prometheus.yml~
 
 *.pkl
 
+
+# Airflow
+nohup.out
+airflow/
+__pycache__/
+*.pyc
+
+# Dados temporários
+data/retrain_dataset.csv
