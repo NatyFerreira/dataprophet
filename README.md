@@ -9,11 +9,14 @@ Model: RandomForestRegressor trained on 31,670 trees (R² = 0.70).
 
 ```
 dataprophet/
-├── main.py              # FastAPI server (prediction + metrics + feedback)
+├── main.py              # FastAPI app (prediction + metrics + feedback)
 ├── schemas.py           # Pydantic schemas (ArvoreFeatures, HelpData)
 ├── metrics.py           # Prometheus metrics (Counter, Histogram)
 ├── train.py             # Model training + MLflow logging
 ├── retrain.py           # Automated retraining with model promotion
+├── compute_kpi.py       # Business KPI — API success rate on feedback data
+├── analyse_retraining.md  # Before/after retraining analysis
+├── tool_choices.md      # Tool justification document
 ├── dags/                # Airflow DAGs (Day 4)
 │   ├── dag_preprocessing.py   # Validate & prepare help_data/ feedback
 │   ├── dag_retrain.py         # Trigger retrain.py via Airflow
@@ -33,14 +36,19 @@ dataprophet/
 
 | Component | Technology |
 |---|---|
-| API | FastAPI + Uvicorn |
+| API server | Uvicorn 0.29 (ASGI) |
+| API framework | FastAPI 0.111 |
 | Model | scikit-learn 1.2.2 (RandomForest) |
 | Experiment Tracking | MLflow 3.13 |
 | Model Registry | MLflow Registry (alias `production`) |
-| Metrics | prometheus-client |
+| Metrics | prometheus-client 0.25 |
 | Monitoring | Prometheus 3.12 + Grafana 13 |
 | Orchestration | Apache Airflow 2.9.1 |
 | Environment | conda Python 3.11 |
+
+> **Note on Uvicorn:** Uvicorn is the ASGI server that runs the FastAPI app on port 8000.
+> The model is loaded **once at startup** via the FastAPI `lifespan()` function.
+> After a model promotion in MLflow, Uvicorn must be **restarted** for the new model to load.
 
 ---
 
@@ -71,15 +79,18 @@ python train.py --n_estimators 100 --max_depth 15
 Then promote to production in the MLflow UI (`http://localhost:5000`):  
 Models → DataProphet → Version 1 → Aliases → Add → `production`
 
-### 3. FastAPI
+### 3. Uvicorn / FastAPI
 ```bash
 uvicorn main:app --reload --port 8000
 ```
+The app loads `models:/DataProphet@production` from MLflow on startup.  
+To reload a newly promoted model: `pkill -f "uvicorn main:app"` then restart.
 
 ### 4. Prometheus
 ```bash
-prometheus --config.file=prometheus.yml --web.listen-address=":9090" &
+prometheus --config.file=/absolute/path/to/prometheus.yml --web.listen-address=":9090" &
 ```
+> Use absolute path — Prometheus does not expand `~` in `--config.file`.
 
 ### 5. Grafana
 ```bash
@@ -100,8 +111,8 @@ Access: `http://localhost:8080` (admin / see terminal output for password)
 
 | Method | Route | Description |
 |---|---|---|
-| GET | `/health` | API health check |
-| GET | `/metrics` | Prometheus metrics |
+| GET | `/health` | API health check — returns `modelo_carregado: true/false` |
+| GET | `/metrics` | Prometheus metrics endpoint |
 | POST | `/api/predict` | Predict planting year |
 | POST | `/api/helpdata` | Submit user feedback |
 
@@ -154,6 +165,17 @@ JSON files are saved to `help_data/` and consumed by `dag_preprocessing` on the 
 
 ---
 
+## Business KPI (Level 3)
+
+```bash
+python compute_kpi.py
+```
+
+Reads `help_data/` JSONs, calls `/api/predict` on each, and prints success rate.  
+Does not require Prometheus or Grafana — console output only.
+
+---
+
 ## Automated MLOps Pipeline (Airflow)
 
 The weekly pipeline runs every Monday at 6am (`0 6 * * 1`) via `dag_mlops_weekly`:
@@ -169,6 +191,12 @@ dag_preprocessing → dag_retrain → dag_deploy
 | `dag_deploy` | Compares R² of new model vs production; promotes if improvement > 1% |
 | `dag_mlops_weekly` | Master DAG — chains the 3 above with `TriggerDagRunOperator` |
 
+After `dag_deploy` promotes a new model, **restart Uvicorn** to load it:
+```bash
+pkill -f "uvicorn main:app"
+uvicorn main:app --reload --port 8000
+```
+
 To trigger manually:
 1. Open `http://localhost:8080`
 2. Search DAGs by tag `dataprophet`
@@ -180,15 +208,21 @@ To trigger manually:
 
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000` → dashboard **DataProphet — Monitoring Production**
-  - Panel 1: Prediction volume per minute
-  - Panel 2: Average prediction latency (s)
-  - Panel 3: Prediction distribution by decade
+
+| Panel | Metric | Alert |
+|---|---|---|
+| Prediction volume per minute | `rate(dataprophet_predictions_total[5m])` | rate = 0 for 5 min → check /health |
+| Average prediction latency (s) | `rate(...duration_sum[1m]) / rate(...count[1m])` | — |
+| Latency P95 (s) | `histogram_quantile(0.95, rate(...bucket[5m]))` | P95 > 500ms for 2 min → restart Uvicorn |
+| Prediction distribution by decade | `dataprophet_predictions_total` | — |
 
 ---
 
 ## Model performance
 
-| Version | n_estimators | max_depth | MAE | R² |
-|---|---|---|---|---|
-| v1 (production) | 100 | 15 | 6.49 years | 0.70 |
-| v2 | 50 | 10 | 8.54 years | 0.59 |
+| Version | n_estimators | max_depth | MAE | R² | Status |
+|---|---|---|---|---|---|
+| v1 | 100 | 15 | 6.49 years | 0.70 | **@production** |
+| v2 | 50 | 10 | 8.54 years | 0.59 | — |
+
+See `analyse_retraining.md` for the full before/after retraining analysis.
