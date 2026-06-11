@@ -121,6 +121,25 @@ def save_helpdata(data: HelpData):
     }
 
 # ---------------------------------------------------------
+# ENDPOINT /admin/reload-model — recarrega modelo sem restart
+# ---------------------------------------------------------
+
+@app.post("/admin/reload-model", tags=["admin"])
+def reload_model():
+    """Recarrega o modelo @production do MLflow Registry sem reiniciar o processo."""
+    try:
+        mlflow.set_tracking_uri(MLFLOW_URI)
+        new_model = mlflow.sklearn.load_model(MODEL_URI)
+        app_state["model"] = new_model
+        print(f"✓ Modelo recarregado: {MODEL_URI}")
+        return {
+            "status": "ok",
+            "message": f"Modelo recarregado com sucesso: {MODEL_URI}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao recarregar modelo: {e}")
+
+# ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
 
