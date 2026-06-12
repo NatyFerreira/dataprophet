@@ -1,4 +1,6 @@
 services:
+
+  # ── MLflow Tracking Server ──────────────────────────────
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.21.3
     ports:
@@ -11,3 +13,51 @@ services:
       --port 5000
       --backend-store-uri sqlite:///mlflow/mlflow.db
       --default-artifact-root /mlflow/artifacts
+
+  # ── Prometheus ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Grafana ─────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.6.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  # ── FastAPI / Uvicorn ───────────────────────────────────
+  # Note: run locally via `uvicorn main:app --port 8000`
+  # Docker image not included — requires conda env with
+  # scikit-learn==1.2.2 and MLflow access to host network.
+  # Production deployment: build a custom image from environment.yml
+
+volumes:
+  grafana_data:
+
+# ── Notes ───────────────────────────────────────────────────────────────────
+# Services run locally (dev mode, Apple Silicon M4):
+#   FastAPI :8000  → uvicorn main:app --reload --port 8000
+#   Airflow :8080  → airflow standalone
+#   MLflow  :5000  → docker compose up mlflow
+#                    OR: mlflow server --host 0.0.0.0 --port 5000
+#   Prometheus :9090 → docker compose up prometheus
+#                      OR: prometheus --config.file=prometheus.yml
+#   Grafana :3000  → docker compose up grafana
+#                    OR: grafana server --homepath /opt/homebrew/share/grafana
+#
+# Docker/OrbStack port-forwarding instability on Apple Silicon M4
+# caused all services to be launched directly via conda during development.
+# This docker-compose.yml represents the target production configuration.

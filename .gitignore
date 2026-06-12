@@ -79,3 +79,18 @@ __pycache__/
 
 # Dados temporários
 data/retrain_dataset.csv
+
+# MLflow local data
+mlflow_data/
+mlflow.db-shm
+mlflow.db-wal
+
+# Prometheus TSDB data
+data/01*/
+data/chunks_head/
+data/wal/
+data/lock
+data/queries.active
+
+# Old model files
+ml1_rf_model.pkl

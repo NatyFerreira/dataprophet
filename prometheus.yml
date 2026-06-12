@@ -4,4 +4,6 @@ global:
 scrape_configs:
   - job_name: 'dataprophet'
     static_configs:
+      # Dev mode (local): prometheus runs directly on host
+      # Docker mode: change to host.docker.internal:8000
       - targets: ['localhost:8000']
