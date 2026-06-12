@@ -9,24 +9,22 @@ Model: RandomForestRegressor trained on 31,670 trees (R² = 0.70).
 
 ```
 dataprophet/
-├── main.py              # FastAPI app (prediction + metrics + feedback)
-├── schemas.py           # Pydantic schemas (ArvoreFeatures, HelpData)
-├── metrics.py           # Prometheus metrics (Counter, Histogram)
-├── train.py             # Model training + MLflow logging
-├── retrain.py           # Automated retraining with model promotion
-├── compute_kpi.py       # Business KPI — API success rate on feedback data
-├── analyse_retraining.md  # Before/after retraining analysis
-├── tool_choices.md      # Tool justification document
-├── dags/                # Airflow DAGs (Day 4)
+├── main.py                    # FastAPI app (prediction + metrics + feedback + model reload)
+├── schemas.py                 # Pydantic schemas (ArvoreFeatures, HelpData)
+├── metrics.py                 # Prometheus metrics (Counter, Histogram)
+├── train.py                   # Model training + MLflow logging
+├── retrain.py                 # Automated retraining with model promotion
+├── compute_kpi.py             # Business KPI — API success rate on feedback data
+├── analyse_retraining.md      # Before/after retraining analysis
+├── tool_choices.md            # Tool justification document
+├── dags/                      # Airflow DAGs (Day 4)
 │   ├── dag_preprocessing.py   # Validate & prepare help_data/ feedback
 │   ├── dag_retrain.py         # Trigger retrain.py via Airflow
-│   ├── dag_deploy.py          # Conditional model promotion (BranchPythonOperator)
+│   ├── dag_deploy.py          # Conditional promotion + auto reload via /admin/reload-model
 │   └── dag_mlops_weekly.py    # Master DAG — runs every Monday at 6am
-├── help_data/           # User feedback (JSON files)
-├── data/                # Processed datasets (retrain_dataset.csv)
-├── prometheus.yml       # Prometheus scraping configuration
-├── docker-compose.yml   # MLflow Server
-├── environment.yml      # Conda dependencies
+├── prometheus.yml             # Prometheus scraping configuration
+├── docker-compose.yml         # All services (MLflow, Prometheus, Grafana)
+├── environment.yml            # Conda dependencies
 └── README.md
 ```
 
@@ -46,9 +44,10 @@ dataprophet/
 | Orchestration | Apache Airflow 2.9.1 |
 | Environment | conda Python 3.11 |
 
-> **Note on Uvicorn:** Uvicorn is the ASGI server that runs the FastAPI app on port 8000.
-> The model is loaded **once at startup** via the FastAPI `lifespan()` function.
-> After a model promotion in MLflow, Uvicorn must be **restarted** for the new model to load.
+> **Note on Uvicorn:** Uvicorn is the ASGI server that runs FastAPI on port 8000.
+> The model is loaded once at startup via `lifespan()`.
+> After a model promotion, `dag_deploy` automatically calls `POST /admin/reload-model`
+> — the new model is loaded in memory **without restarting Uvicorn (zero downtime)**.
 
 ---
 
@@ -83,8 +82,11 @@ Models → DataProphet → Version 1 → Aliases → Add → `production`
 ```bash
 uvicorn main:app --reload --port 8000
 ```
-The app loads `models:/DataProphet@production` from MLflow on startup.  
-To reload a newly promoted model: `pkill -f "uvicorn main:app"` then restart.
+The app loads `models:/DataProphet@production` from MLflow at startup.  
+To reload a newly promoted model without restart:
+```bash
+curl -X POST http://localhost:8000/admin/reload-model
+```
 
 ### 4. Prometheus
 ```bash
@@ -115,6 +117,7 @@ Access: `http://localhost:8080` (admin / see terminal output for password)
 | GET | `/metrics` | Prometheus metrics endpoint |
 | POST | `/api/predict` | Predict planting year |
 | POST | `/api/helpdata` | Submit user feedback |
+| POST | `/admin/reload-model` | Reload model from MLflow Registry — no Uvicorn restart needed |
 
 ---
 
@@ -165,14 +168,34 @@ JSON files are saved to `help_data/` and consumed by `dag_preprocessing` on the 
 
 ---
 
+## Model Reload (zero downtime)
+
+After `dag_deploy` promotes a new model, it automatically calls:
+
+```bash
+curl -X POST http://localhost:8000/admin/reload-model
+```
+
+Response:
+```json
+{
+  "status": "ok",
+  "message": "Modelo recarregado com sucesso: models:/DataProphet@production"
+}
+```
+
+The new model is loaded in memory — Uvicorn keeps running, no downtime.
+
+---
+
 ## Business KPI (Level 3)
 
 ```bash
 python compute_kpi.py
 ```
 
-Reads `help_data/` JSONs, calls `/api/predict` on each, and prints success rate.  
-Does not require Prometheus or Grafana — console output only.
+Reads `help_data/` JSONs, calls `/api/predict` on each, prints success rate.  
+Console output only — does not require Prometheus or Grafana.
 
 ---
 
@@ -187,15 +210,9 @@ dag_preprocessing → dag_retrain → dag_deploy
 | DAG | What it does |
 |---|---|
 | `dag_preprocessing` | Reads `help_data/` JSONs, validates, saves `data/retrain_dataset.csv` |
-| `dag_retrain` | Calls `retrain.py`, verifies new MLflow run registered |
-| `dag_deploy` | Compares R² of new model vs production; promotes if improvement > 1% |
+| `dag_retrain` | Calls `retrain.py`, verifies new MLflow run registered in `arvores-grenoble-retrain` |
+| `dag_deploy` | Compares R² vs production; if better → promotes + calls `/admin/reload-model` automatically |
 | `dag_mlops_weekly` | Master DAG — chains the 3 above with `TriggerDagRunOperator` |
-
-After `dag_deploy` promotes a new model, **restart Uvicorn** to load it:
-```bash
-pkill -f "uvicorn main:app"
-uvicorn main:app --reload --port 8000
-```
 
 To trigger manually:
 1. Open `http://localhost:8080`
@@ -209,12 +226,19 @@ To trigger manually:
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000` → dashboard **DataProphet — Monitoring Production**
 
-| Panel | Metric | Alert |
-|---|---|---|
-| Prediction volume per minute | `rate(dataprophet_predictions_total[5m])` | rate = 0 for 5 min → check /health |
-| Average prediction latency (s) | `rate(...duration_sum[1m]) / rate(...count[1m])` | — |
-| Latency P95 (s) | `histogram_quantile(0.95, rate(...bucket[5m]))` | P95 > 500ms for 2 min → restart Uvicorn |
-| Prediction distribution by decade | `dataprophet_predictions_total` | — |
+| Level | Panel | Metric | Alert | Threshold |
+|---|---|---|---|---|
+| 1 — System | Latency P95 | `histogram_quantile(0.95, rate(...bucket[5m]))` | P95 Latency degraded | > 200ms for 2 min |
+| 1 — System | Average Latency | `rate(...sum[1m]) / rate(...count[1m])` | High Latency | > 1s for 2 min |
+| 1 — System | Request rate | `rate(predictions_total[5m])` | — | — |
+| 2 — Model | Prediction volume | `dataprophet_predictions_total` | Prediction volume set to zero | rate = 0 for 5 min |
+| 2 — Model | Label distribution | `dataprophet_predictions_total` (pie) | — | — |
+| 3 — Business | API success rate | `compute_kpi.py` (console) | — | manual |
+
+All alert thresholds are based on **SmartRetail SLA requirements**:
+- P95 latency < 200ms
+- API availability ≥ 99% uptime
+- Intervention: `POST /admin/reload-model` — no Uvicorn restart required
 
 ---
 
