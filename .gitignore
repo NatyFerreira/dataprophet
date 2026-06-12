@@ -94,3 +94,4 @@ data/queries.active
 
 # Old model files
 ml1_rf_model.pkl
+DataProphet_sequence_diagram.drawio
