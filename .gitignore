@@ -96,3 +96,8 @@ data/queries.active
 # Draw.io source files
 # ============================================
 *.drawio
+# Draw.io temporary exports
+*-1.png
+
+# nohup logs
+nohup.out
