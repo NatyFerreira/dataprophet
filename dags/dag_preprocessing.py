@@ -19,7 +19,7 @@ REQUIRED_FIELDS = ["genre_bota", "espece", "stadededeveloppement",
 def load_and_validate(**context):
     files = glob.glob(os.path.join(HELP_DATA_DIR, "*.json"))
     if not files:
-        print("Nenhum arquivo em help_data/. Pipeline encerrado.")
+        print("No files found in help_data/. Pipeline stopped.")
         context["ti"].xcom_push(key="valid_records", value=[])
         return
 
@@ -30,22 +30,22 @@ def load_and_validate(**context):
         if all(k in data for k in REQUIRED_FIELDS):
             valid.append(data)
         else:
-            print(f"Rejeitado: {f}")
+            print(f"Rejected: {f}")
             rejected += 1
 
-    print(f"Válidos: {len(valid)} | Rejeitados: {rejected}")
+    print(f"Valid: {len(valid)} | Rejected: {rejected}")
     context["ti"].xcom_push(key="valid_records", value=valid)
 
 def prepare_dataset(**context):
     records = context["ti"].xcom_pull(key="valid_records", task_ids="load_and_validate")
     if not records:
-        print("Nenhum registro válido para processar.")
+        print("No valid records to process.")
         return
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     df = pd.DataFrame(records)
     df.to_csv(OUTPUT_PATH, index=False)
-    print(f"Dataset salvo em {OUTPUT_PATH} com {len(df)} linhas.")
+    print(f"Dataset saved to {OUTPUT_PATH} with {len(df)} rows.")
 
 with DAG(
     dag_id="dag_preprocessing",

@@ -1,8 +1,8 @@
 """
-retrain.py — Re-treina o modelo, compara com o que está em Produção
-e promove automaticamente para Staging se melhorar o R².
+retrain.py — Retrains the model, compares it with the one in Production,
+and automatically promotes it to Staging if the R² improves.
 
-Uso:
+Usage:
     python retrain.py
 """
 
@@ -28,7 +28,7 @@ warnings.filterwarnings("ignore")
 MLFLOW_URI     = "http://localhost:5000"
 EXPERIMENT     = "arvores-grenoble-retrain"
 MODEL_NAME     = "DataProphet"
-ROC_AUC_THRESHOLD = 0.01   # mínimo de melhoria em R² para promover
+ROC_AUC_THRESHOLD = 0.01   # minimum R² improvement required for promotion
 
 
 def carregar_dados(caminho="data.pkl"):
@@ -37,11 +37,11 @@ def carregar_dados(caminho="data.pkl"):
     target = "anneedeplantation"
     df = df.dropna(subset=[target])
 
-    # Verifica se existem dados de feedback em help_data/
+    # Check if feedback data exists in help_data/
     import os, json, glob
     feedback_files = glob.glob("help_data/*.json")
     if feedback_files:
-        print(f"  {len(feedback_files)} arquivos de feedback encontrados.")
+        print(f"  {len(feedback_files)} feedback files found.")
         registros = []
         for path in feedback_files:
             try:
@@ -53,9 +53,9 @@ def carregar_dados(caminho="data.pkl"):
             df_feedback = pd.DataFrame(registros)
             if target in df_feedback.columns:
                 df = pd.concat([df, df_feedback], ignore_index=True)
-                print(f"  Dataset aumentado com feedback: {len(df)} linhas.")
+                print(f"  Dataset augmented with feedback: {len(df)} rows.")
     else:
-        print("  Sem dados de feedback — usando dataset base.")
+        print("  No feedback data — using base dataset.")
 
     X = df.drop(columns=[target])
     y = df[target]
@@ -89,7 +89,7 @@ def criar_pipeline(n_estimators=100, max_depth=10):
 
 
 def r2_do_modelo_em_producao(client, X_test, y_test):
-    """Busca o R² do modelo atualmente em Produção."""
+    """Fetches the R² of the model currently in Production."""
     try:
         modelo_prod = mlflow.sklearn.load_model(
             f"models:/{MODEL_NAME}/Production"
@@ -97,7 +97,7 @@ def r2_do_modelo_em_producao(client, X_test, y_test):
         y_pred = modelo_prod.predict(X_test)
         return r2_score(y_test, y_pred)
     except Exception:
-        print("  Nenhum modelo em Produção encontrado — primeiro treino.")
+        print("  No model in Production found — first training.")
         return -999
 
 
@@ -112,7 +112,7 @@ def retrain():
     )
 
     r2_prod = r2_do_modelo_em_producao(client, X_test, y_test)
-    print(f"  R² do modelo em Produção: {r2_prod:.4f}")
+    print(f"  R² of Production model: {r2_prod:.4f}")
 
     pipeline = criar_pipeline(n_estimators=100, max_depth=10)
 
@@ -136,20 +136,20 @@ def retrain():
             registered_model_name=MODEL_NAME,
         )
 
-        print(f"  Novo modelo — R²: {r2:.4f}")
+        print(f"  New model — R²: {r2:.4f}")
 
-        # Promoção automática para Staging se melhorar
-        melhoria = r2 - r2_prod
-        if melhoria > ROC_AUC_THRESHOLD:
-            versao = result.registered_model_version
+        # Automatic promotion to Staging if improved
+        improvement = r2 - r2_prod
+        if improvement > ROC_AUC_THRESHOLD:
+            version = result.registered_model_version
             client.transition_model_version_stage(
                 name=MODEL_NAME,
-                version=versao,
+                version=version,
                 stage="Staging",
             )
-            print(f"  Modelo v{versao} promovido para Staging (melhoria: +{melhoria:.4f})")
+            print(f"  Model v{version} promoted to Staging (improvement: +{improvement:.4f})")
         else:
-            print(f"  Melhoria insuficiente ({melhoria:.4f}) — modelo não promovido.")
+            print(f"  Insufficient improvement ({improvement:.4f}) — model not promoted.")
 
 
 if __name__ == "__main__":

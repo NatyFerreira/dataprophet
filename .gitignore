@@ -24,15 +24,19 @@ mlruns/
 mlflow.db
 mlflow.db-journal
 mlartifacts/
+mlflow_data/
+mlflow.db-shm
+mlflow.db-wal
 
 # ============================================
-# Dados do projeto
+# Project data
 # ============================================
 help_data/
 data/
 *.csv
 *.parquet
 *.jsonl
+data/retrain_dataset.csv
 
 # ============================================
 # Docker
@@ -55,7 +59,7 @@ prometheus.yml~
 *.ipynb~
 
 # ============================================
-# Logs e temporários
+# Logs and temporary files
 # ============================================
 *.log
 *.tmp
@@ -68,30 +72,27 @@ prometheus.yml~
 .vscode/
 .idea/
 
+# ============================================
+# Models / artifacts
+# ============================================
 *.pkl
 
-
+# ============================================
 # Airflow
+# ============================================
 nohup.out
 airflow/
-__pycache__/
-*.pyc
 
-# Dados temporários
-data/retrain_dataset.csv
-
-# MLflow local data
-mlflow_data/
-mlflow.db-shm
-mlflow.db-wal
-
+# ============================================
 # Prometheus TSDB data
+# ============================================
 data/01*/
 data/chunks_head/
 data/wal/
 data/lock
 data/queries.active
 
-# Old model files
-ml1_rf_model.pkl
-DataProphet_sequence_diagram.drawio
+# ============================================
+# Draw.io source files
+# ============================================
+*.drawio

@@ -1,8 +1,8 @@
 """
-train.py — Treina o modelo e registra tudo no MLflow.
+train.py — Trains the model and logs everything to MLflow.
 
-Uso:
-    python train.py                          # parâmetros padrão
+Usage:
+    python train.py                          # default parameters
     python train.py --n_estimators 50 --max_depth 10
 """
 
@@ -90,18 +90,18 @@ def treinar(n_estimators=100, max_depth=15):
         mlflow.log_metric("rmse", round(rmse, 4))
         mlflow.log_metric("r2",   round(r2, 4))
 
-        # Compatível com MLflow server v2.x
+        # Compatible with MLflow server v2.x
         mlflow.sklearn.log_model(
             sk_model=pipeline,
             artifact_path="model",
             registered_model_name=MODEL_NAME,
         )
 
-        print(f"✓ Run concluído:")
+        print(f"✓ Run completed:")
         print(f"  n_estimators = {n_estimators}")
         print(f"  max_depth    = {max_depth}")
-        print(f"  MAE          = {mae:.2f} anos")
-        print(f"  RMSE         = {rmse:.2f} anos")
+        print(f"  MAE          = {mae:.2f} years")
+        print(f"  RMSE         = {rmse:.2f} years")
         print(f"  R²           = {r2:.4f}")
 
 
