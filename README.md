@@ -31,7 +31,7 @@ dataprophet/
 ```
 System architecture overview:
 
-![alt text](architecture_schema.drawio-1.png)
+![Architecture](architecture_schema.drawio.png)
 This diagram represents the complete production architecture: FastAPI (prediction + feedback + metrics), MLflow Tracking + Registry, Prometheus, Grafana, Airflow DAGs, and the help_data/ feedback loop.
 
 ---
@@ -241,7 +241,7 @@ To trigger manually:
 
 ## Monitoring Architecture (3 KPI Levels)
 
-![alt text](monitoring_schema.drawio-1.png)
+![Monitoring](monitoring_schema.drawio.png)
 
 This diagram shows the three monitoring layers implemented in DataProphet:
 
@@ -280,7 +280,7 @@ Includes:
 
 **Sequence Diagram**
 
-![alt text](sequence_diagram.drawio-1.png)
+![Sequence Diagram](sequence_diagram.drawio.png)
 
 This diagram illustrates the full temporal flow:
 
